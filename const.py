@@ -2,6 +2,7 @@
 
 import util
 import math
+import pdb
 
 class SampleFunction:
     'sample_lst的格式为[(sample_point, sample_value)], 无sample_point相同,函数内部会对列表按照sample_point排序'
@@ -61,7 +62,7 @@ class ConstantSolver:
         '角度采样都通过弧度给出'
         self.__c_d = SampleFunction(samples)
 
-    def get_valid_range(self):
+    def __get_valid_range(self):
         '计算有效的求解phi的范围'
         r1s, r1e = self.__c_d.get_range()
         r2s, r2e = self.__c_l.get_range()
@@ -73,11 +74,12 @@ class ConstantSolver:
         c_d = self.__c_d.compute(math.pi / 2 - phi)
         return self.__c_l.compute(math.pi / 2 - phi) / c_d - \
             self.__g * self.__mass / \
-            (0.5 * self.__density * self.__area * self.__v_wind ** 2 * c_d)
+            (0.5 * self.__density * self.__area * self.__v_wind ** 2 * c_d) \
+            - math.tan(phi)
 
     def solve(self, explore_step_ratio = 1/200, delta = 0.01):
         '外部调用的时候应当指定首次探索时的步长，以及最终数值解可以接受的精度'
-        valid_start, valid_end = self.get_valid_range()
+        valid_start, valid_end = self.__get_valid_range()
         res_start = self.compute(valid_start)
         if abs(res_start) < delta:
             return valid_start
@@ -94,7 +96,6 @@ class ConstantSolver:
                 zero_found = True
                 break
             sample_point += explore_step
-
         if not zero_found:
             raise ConstantSolverError(ConstantSolverError.ERR_EXPLORE_FAILED)
         
@@ -105,11 +106,10 @@ class ConstantSolver:
             mid = (start + end) / 2
             res_mid = self.compute(mid)
             if abs(res_mid) < delta:
-                return res_mid
+                return mid
             sgn_mid = util.sgn(res_mid)
             if sgn_mid == sgn_end:
                 end = mid; sgn_end = sgn_mid
             else:
-                start == mid
+                start = mid
         raise ConstantSolverError(ConstantSolverError.ERR_DELTA_TOO_SMALL)
-
