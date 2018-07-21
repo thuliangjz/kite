@@ -3,10 +3,11 @@
 import const
 import unittest
 import math
+import util
 
 class TestSampleFunction(unittest.TestCase):
     lst = [(0, 2), (1, 5), (2, 9)]
-    f = const.SampleFunction(lst)
+    f = util.SampleFunction(lst)
     def test_start_point(self):
         self.assertEqual(self.f.compute(0), 2)
     def test_end_point(self):

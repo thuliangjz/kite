@@ -4,37 +4,6 @@ import util
 import math
 import pdb
 
-class SampleFunction:
-    'sample_lst的格式为[(sample_point, sample_value)], 无sample_point相同,函数内部会对列表按照sample_point排序'
-    def __init__(self, sample_lst):
-        if len(sample_lst) < 2:
-            raise ValueError("sample list too short (at least 2)")
-        sample_lst.sort(key= lambda x:x[0])
-        self.__domain = (sample_lst[0][0], sample_lst[-1][0])
-        self.__sample_lst = sample_lst
-        self.__idx_start_last = 0
-
-    def compute(self, val):
-        '在查找给定值区间的时候借助了上一次记录下来的结果，更好地利用访问的局部性'
-        if not (val >= self.__domain[0] and val <= self.__domain[1]):
-            raise ValueError("value out of domain range")
-        if val > self.__sample_lst[self.__idx_start_last][0]:
-            delta = 1
-        else:
-            delta = -1
-        i_start = self.__idx_start_last
-        while True:
-            if val >= self.__sample_lst[i_start][0] and \
-                val <= self.__sample_lst[i_start + 1][0]:
-                break
-            i_start += delta
-        self.__idx_start_last = i_start
-        start_point, start_val = self.__sample_lst[i_start]
-        end_point, end_val = self.__sample_lst[i_start + 1]
-        return start_val + (end_val - start_val) / (end_point - start_point) * (val - start_point)
-
-    def get_range(self):
-        return (self.__domain[0], self.__domain[1])
 
 class ConstantSolverError(Exception):
     ERR_EXPLORE_FAILED = "exploration failed"
@@ -56,11 +25,11 @@ class ConstantSolver:
     
     def set_c_l(self, samples):
         '角度采样都通过弧度给出'
-        self.__c_l = SampleFunction(samples)
+        self.__c_l = util.SampleFunction(samples)
 
     def set_c_d(self, samples):
         '角度采样都通过弧度给出'
-        self.__c_d = SampleFunction(samples)
+        self.__c_d = util.SampleFunction(samples)
 
     def __get_valid_range(self):
         '计算有效的求解phi的范围'
