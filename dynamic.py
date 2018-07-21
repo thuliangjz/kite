@@ -6,15 +6,20 @@ import numpy as np
 class DynamicSolver:
     def __init__(self):
         pass
-    def init(self, mass, density, area, c_d, c_l, v_wind, v_vertical_0, r_0, step_interval = 0.01):
-        '设置系统参数，边界条件以及求解步长（默认为0.01）'
+    def init(self, mass, density, area, c_d, c_l, v_wind, v_vertical_0, r_0, reader ,step_interval = 0.01):
+        '系统初始化函数,reader使用的应当是VReaderBase的子类'
+        #系统参数
         self.__mass = mass; self.__density = density; self.__area = area
         self.__c_d = c_d; self.__c_l = c_l      #c_l和c_d都是函数对象，需要使用compute接口 
         self.__v_wind = np.array(v_wind)
         self.__v_vertical = np.array(v_vertical_0)
+        #边界条件
         self.__r = np.array(r_0)
         self.__step_interval = step_interval
+        #求解时钟初始化
         self.__logic_timer = 0
+        #设置读取器
+        self.__reader = reader
     def step(self):
         '根据设定的求解步长用数值方法求解下一个小时间间隔的v_vertical和位矢r'
 
@@ -50,4 +55,4 @@ class DynamicSolver:
         return (self.__logic_timer, np.array(self.__r))
 
     def get_v_parallel(self):
-        return 0
+        return self.__reader.read(self.__logic_timer)
