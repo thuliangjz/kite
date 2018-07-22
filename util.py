@@ -1,6 +1,17 @@
 import numpy as np
 import math
-class SampleFunction:
+class KiteFunctionException(Exception):
+    pass
+
+class KiteFunction:
+    def compute(self, val):
+        raise KiteFunctionException("function-specific compute method should be implemented")
+
+    def get_range(self):
+        raise KiteFunctionException("function-specific get_range method should be implemented")
+
+
+class SampleFunction(KiteFunction):
     'sample_lst的格式为[(sample_point, sample_value)], 无sample_point相同,函数内部会对列表按照sample_point排序'
     def __init__(self, sample_lst):
         if len(sample_lst) < 2:

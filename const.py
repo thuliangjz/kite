@@ -23,13 +23,13 @@ class ConstantSolver:
         self.__v_wind = v_wind
         self.__g = 9.8
     
-    def set_c_l(self, samples):
-        '角度采样都通过弧度给出'
-        self.__c_l = util.SampleFunction(samples)
+    def set_c_l(self, c_l):
+        '角度都通过弧度给出'
+        self.__c_l = c_l
 
-    def set_c_d(self, samples):
-        '角度采样都通过弧度给出'
-        self.__c_d = util.SampleFunction(samples)
+    def set_c_d(self, c_d):
+        '角度都通过弧度给出'
+        self.__c_d = c_d
 
     def __get_valid_range(self):
         '计算有效的求解phi的范围'

@@ -24,8 +24,8 @@ class TestConstantSolverCDLL(unittest.TestCase):
         '求解器得到的结果调用compute方法应该误差在delta内'
         solver = const.ConstantSolver()
         solver.set_constants(0.2, 1, 1.225, 5)
-        solver.set_c_d([(0, 0.5), (math.pi / 2, 0.5)])
-        solver.set_c_l([(0, 0), (math.pi / 2, 5 * math.pi / 2)])
+        solver.set_c_d(util.SampleFunction([(0, 0.5), (math.pi / 2, 0.5)]))
+        solver.set_c_l(util.SampleFunction([(0, 0), (math.pi / 2, 5 * math.pi / 2)]))
         delta = 0.0001
         phi = solver.solve(delta=delta)
         self.assertLessEqual(solver.compute(phi), delta, "solution's function value too big")
@@ -34,15 +34,15 @@ class TestConstantSolverCDLL(unittest.TestCase):
         '当风力非常大的时候phi应当与风速无关，只要c_l / c_d 近似等于 tan(phi)即可'
         solver1 = const.ConstantSolver()
         solver1.set_constants(0.2, 1, 1.225, 10000)
-        solver1.set_c_d([(0, 0.5), (math.pi / 2, 0.5)])
-        solver1.set_c_l([(0, 0), (math.pi / 2, 5 * math.pi / 2)])
+        solver1.set_c_d(util.SampleFunction([(0, 0.5), (math.pi / 2, 0.5)]))
+        solver1.set_c_l(util.SampleFunction([(0, 0), (math.pi / 2, 5 * math.pi / 2)]))
         delta = 0.001
         phi1 = solver1.solve(delta=delta)
 
         solver2 = const.ConstantSolver()
         solver2.set_constants(0.2, 1, 1.225, 60000)
-        solver2.set_c_d([(0, 0.5), (math.pi / 2, 0.5)])
-        solver2.set_c_l([(0, 0), (math.pi / 2, 5 * math.pi / 2)])
+        solver2.set_c_d(util.SampleFunction([(0, 0.5), (math.pi / 2, 0.5)]))
+        solver2.set_c_l(util.SampleFunction([(0, 0), (math.pi / 2, 5 * math.pi / 2)]))
         delta = 0.001
         phi2 = solver2.solve(delta=delta)
 
@@ -52,15 +52,15 @@ class TestConstantSolverCDLL(unittest.TestCase):
         '增大c_l的线性系数，应当使得phi增大'
         solver1 = const.ConstantSolver()
         solver1.set_constants(0.2, 1, 1.225, 5)
-        solver1.set_c_d([(0, 0.5), (math.pi / 2, 0.5)])
-        solver1.set_c_l([(0, 0), (math.pi / 2, 4 * math.pi / 2)])
+        solver1.set_c_d(util.SampleFunction([(0, 0.5), (math.pi / 2, 0.5)]))
+        solver1.set_c_l(util.SampleFunction([(0, 0), (math.pi / 2, 4 * math.pi / 2)]))
         delta = 0.001
         phi1 = solver1.solve(delta=delta)
 
         solver2 = const.ConstantSolver()
         solver2.set_constants(0.2, 1, 1.225, 5)
-        solver2.set_c_d([(0, 0.5), (math.pi / 2, 0.5)])
-        solver2.set_c_l([(0, 0), (math.pi / 2, 5 * math.pi / 2)])
+        solver2.set_c_d(util.SampleFunction([(0, 0.5), (math.pi / 2, 0.5)]))
+        solver2.set_c_l(util.SampleFunction([(0, 0), (math.pi / 2, 5 * math.pi / 2)]))
         delta = 0.001
         phi2 = solver2.solve(delta=delta)
 
@@ -70,15 +70,15 @@ class TestConstantSolverCDLL(unittest.TestCase):
         '增大c_d的线性系数，应当使得phi减小'
         solver1 = const.ConstantSolver()
         solver1.set_constants(0.2, 1, 1.225, 5)
-        solver1.set_c_d([(0, 0.5), (math.pi / 2, 0.5)])
-        solver1.set_c_l([(0, 0), (math.pi / 2, 4 * math.pi / 2)])
+        solver1.set_c_d(util.SampleFunction([(0, 0.5), (math.pi / 2, 0.5)]))
+        solver1.set_c_l(util.SampleFunction([(0, 0), (math.pi / 2, 4 * math.pi / 2)]))
         delta = 0.001
         phi1 = solver1.solve(delta=delta)
 
         solver2 = const.ConstantSolver()
         solver2.set_constants(0.2, 1, 1.225, 5)
-        solver2.set_c_d([(0, 1), (math.pi / 2, 1)]) #增大了c_d常量
-        solver2.set_c_l([(0, 0), (math.pi / 2, 4 * math.pi / 2)])
+        solver2.set_c_d(util.SampleFunction([(0, 1), (math.pi / 2, 1)])) #增大了c_d常量
+        solver2.set_c_l(util.SampleFunction([(0, 0), (math.pi / 2, 4 * math.pi / 2)]))
         delta = 0.001
         phi2 = solver2.solve(delta=delta)
         
