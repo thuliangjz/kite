@@ -56,3 +56,10 @@ def get_angle_2d(v1, v2):
     if cross != 0:
         theta *= cross
     return theta
+
+def vector_check(v, length):
+    try:
+        l = len(v)
+    except TypeError:
+        return False
+    return l == length

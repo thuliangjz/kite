@@ -3,14 +3,29 @@
 import util
 import numpy as np
 
+import pdb
 class DynamicSolver:
     def __init__(self):
         pass
     def init(self, mass, density, area, c_d, c_l, v_wind, v_vertical_0, r_0, reader ,step_interval = 0.01):
+        """
+        系统初始化函数
+        调用参数说明：
+        c_d, c_l：都是函数对象，需要使用角度接口，计算角度以弧度作为单位
+        v_wind, r_0: 必须是二维向量
+        """
         '系统初始化函数,reader使用的应当是VReaderBase的子类'
         #系统参数
         self.__mass = mass; self.__density = density; self.__area = area
-        self.__c_d = c_d; self.__c_l = c_l      #c_l和c_d都是函数对象，需要使用compute接口 
+
+        #c_l与c_d接口检查
+        self.__c_d = c_d; self.__c_l = c_l      #c_l和c_d都是函数对象，需要使用compute接口,计算的角度都是以弧度为单位的
+        if not (hasattr(c_d, "compute") and hasattr(c_l, "compute")):
+            raise ValueError("c_d or c_l does not have compute interface")
+        #向量参数检查
+        if not (util.vector_check(v_wind, 2) and \
+            util.vector_check(r_0, 2)):
+            raise ValueError("v_wind and r_0 must be 2D vector")
         self.__v_wind = np.array(v_wind)
         self.__v_vertical = np.array(v_vertical_0)
         #边界条件
@@ -24,11 +39,11 @@ class DynamicSolver:
         '根据设定的求解步长用数值方法求解下一个小时间间隔的v_vertical和位矢r'
 
         v_parallel = self.get_v_parallel()          #由于get_v_parallel可能具有副作用，所以在整个step的过程中只调用1次
-        
         g = 9.8 #重力加速度常数
-        cntr_clk_90 = np.array([[0, 1], [-1, 1]])    #逆时针旋转90度的常数矩阵
-        clk_90 = np.array([[0, -1], [1, 0]])        #顺时针旋转90度的常数矩阵
-        v_kite = self.__r.dot * v_parallel + cntr_clk_90.dot(self.__r) * self.__v_vertical #根据两个分量计算v矢量
+        clk_90 = np.array([[0, 1], [-1, 0]])    #逆时针旋转90度的常数矩阵
+        cntr_clk_90 = np.array([[0, -1], [1, 0]])        #顺时针旋转90度的常数矩阵
+        r_unit = self.__r / np.linalg.norm(self.__r)
+        v_kite = r_unit * v_parallel + cntr_clk_90.dot(r_unit) * self.__v_vertical #根据两个分量计算v矢量
         v_rel = self.__v_wind - v_kite
         attack_angle = util.get_angle_2d(clk_90.dot(self.__r), v_rel)   #计算风吹到风筝上的角度
 
@@ -45,8 +60,8 @@ class DynamicSolver:
             np.linalg.norm(self.__r)
         
         #更新状态
-        self.__r += self.__v_vertical * self.__step_interval
-        self.__v_vertical += deriv_v_vertical * self.__step_interval
+        self.__r = self.__r +  v_kite * self.__step_interval
+        self.__v_vertical = self.__v_vertical + deriv_v_vertical * self.__step_interval
 
         #更新逻辑时钟滴答
         self.__logic_timer += self.__step_interval
