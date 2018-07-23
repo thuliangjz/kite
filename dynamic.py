@@ -43,13 +43,13 @@ class DynamicSolver:
         clk_90 = np.array([[0, 1], [-1, 0]])    #逆时针旋转90度的常数矩阵
         cntr_clk_90 = np.array([[0, -1], [1, 0]])        #顺时针旋转90度的常数矩阵
         r_unit = self.__r / np.linalg.norm(self.__r)
-        v_kite = r_unit * v_parallel + cntr_clk_90.dot(r_unit) * self.__v_vertical #根据两个分量计算v矢量
+        v_kite = r_unit * v_parallel + clk_90.dot(r_unit) * self.__v_vertical #根据两个分量计算v矢量
         v_rel = self.__v_wind - v_kite
         attack_angle = util.get_angle_2d(clk_90.dot(self.__r), v_rel)   #计算风吹到风筝上的角度
 
         #下面计算除去拉力的合力f_total
         f_l = 0.5 * self.__density * self.__area * self.__c_l.compute(attack_angle) \
-            * cntr_clk_90.dot(v_rel) * np.linalg.norm(v_rel)     #计算提升力
+            * clk_90.dot(v_rel) * np.linalg.norm(v_rel)     #计算提升力
         f_d = 0.5 * self.__density * self.__area * self.__c_d.compute(attack_angle) \
             * np.linalg.norm(v_rel) * v_rel     #计算拉力
         gravity = np.array([0, -self.__mass * g])
@@ -57,7 +57,7 @@ class DynamicSolver:
 
         #计算v_vertical的导数
         deriv_v_vertical = (np.linalg.det([f_total, self.__r]) - self.__v_vertical * v_parallel) / \
-            np.linalg.norm(self.__r)
+            (np.linalg.norm(self.__r) * self.__mass)
         
         #更新状态
         self.__r = self.__r +  v_kite * self.__step_interval
@@ -67,7 +67,7 @@ class DynamicSolver:
         self.__logic_timer += self.__step_interval
 
     def get_state(self):
-        return (self.__logic_timer, np.array(self.__r))
+        return (self.__logic_timer, np.array(self.__r), self.__v_vertical)
 
     def get_v_parallel(self):
         return self.__reader.read(self.__logic_timer)
