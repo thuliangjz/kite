@@ -4,9 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
+import sys, os
+sys.path.append(os.path.abspath("."))
+import util
 import dynamic
 import reader
-import util
 import math
 import pdb
 import const

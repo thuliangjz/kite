@@ -1,15 +1,16 @@
 #!../bin/python3.6
-
+import sys, os
+sys.path.append(os.path.abspath(os.path.join('..')))
 import util
 import math
 import pdb
-
 
 class ConstantSolverError(Exception):
     ERR_EXPLORE_FAILED = "exploration failed"
     ERR_DELTA_TOO_SMALL = "delta too small"
     pass
 
+a = 100
 
 class ConstantSolver:
     '定常问题二分求解器'

@@ -1,9 +1,11 @@
-#!../bin/python3.6
-
-import const
+#!../../bin/python3.6
 import unittest
 import math
-import util
+import sys, os
+sys.path.append(os.path.abspath("."))
+import util 
+import const
+
 
 class TestSampleFunction(unittest.TestCase):
     lst = [(0, 2), (1, 5), (2, 9)]

@@ -1,20 +1,18 @@
 #!../bin/python3.6
-
-import util
 import numpy as np
+import util
 
-import pdb
 class DynamicSolver:
     def __init__(self):
         pass
-    def init(self, mass, density, area, c_d, c_l, v_wind, v_vertical_0, r_0, reader ,step_interval = 0.01):
+    def init(self, mass, density, area, c_d, c_l, v_wind, v_vertical_0, r_0, reader, step_interval=0.01):
         """
         系统初始化函数
         调用参数说明：
         c_d, c_l：都是函数对象，需要使用角度接口，计算角度以弧度作为单位
         v_wind, r_0: 必须是二维向量
+        reader:使用的应当是VReaderBase的子类
         """
-        '系统初始化函数,reader使用的应当是VReaderBase的子类'
         #系统参数
         self.__mass = mass; self.__density = density; self.__area = area
 
