@@ -21,9 +21,8 @@ class DynamicSolver:
         if not (hasattr(c_d, "compute") and hasattr(c_l, "compute")):
             raise ValueError("c_d or c_l does not have compute interface")
         #向量参数检查
-        if not (util.vector_check(v_wind, 2) and \
-            util.vector_check(r_0, 2)):
-            raise ValueError("v_wind and r_0 must be 2D vector")
+        util.check_vector(v_wind, 2)
+        util.check_vector(r_0, 2)
         self.__v_wind = np.array(v_wind)
         self.__v_vertical = np.array(v_vertical_0)
         #边界条件

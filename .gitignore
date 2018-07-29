@@ -3,3 +3,4 @@ my*.py
 *.log
 .pylintrc
 .vscode/
+/test.py
