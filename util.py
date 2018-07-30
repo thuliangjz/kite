@@ -101,3 +101,12 @@ def vec_plane_angle(vec, plane):
         np.array([0, 1])
     )
     return (phi, theta)
+
+def affinization(array, is_mov, size):
+    """
+    传入一个表示平移的一维向量或者一个表示算子的矩阵（通过is_mov进行判断）
+    返回一个表示仿射变换的矩阵
+    """
+    if is_mov:
+        return np.concatenate((np.zeros((size, len(array))), [array,])).transpose()
+    return np.concatenate((array.transpose(), np.zeros((1, len(array))))).transpose()
