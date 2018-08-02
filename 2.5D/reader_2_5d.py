@@ -1,9 +1,9 @@
 """
-3维模拟器的reader类
+2.5维模拟器的reader类
 负责指定读取器的类型（读取当前时刻的加速度还是拉力）
 实现自定义读取方法
 """
-class Reader3DBase:
+class ReaderBase:
     TYPE_FORCE = 0
     TYPE_ACCELERATION = 1
     def __init__(self):
@@ -12,8 +12,3 @@ class Reader3DBase:
         raise NotImplementedError("implement your own read method")
     def get_type(self):
         raise NotImplementedError("implement your own read method")
-    def set_attach_pts(self, lst_pts):
-        raise NotImplementedError()
-    def get_attach_pts(self):
-        raise NotImplementedError()
-   

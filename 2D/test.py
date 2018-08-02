@@ -3,7 +3,7 @@ import unittest
 import math
 import sys, os
 sys.path.append(os.path.abspath("."))
-import util 
+import util
 import const
 
 

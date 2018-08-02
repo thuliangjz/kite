@@ -1,9 +1,17 @@
 """
 实现3维风筝模拟求解器
 """
+import sys
+import os
 import numpy as np
-import util
 import reader_3d
+sys.path.append(os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..")
+))
+#pylint: disable=wrong-import-position
+import util
+#pylint: enable=wrong-import-position
+
 class Dynamic3D:
     """
     三维风筝模拟器
@@ -88,12 +96,23 @@ class Dynamic3D:
 
         #计算质心在空间中的初始位置
         self.__rc = init_cond["r0"] + mass_center
+        self.__attach_pts = []
 
         #将位矢全部转换为质心坐标系下的位矢
         for panel in self.__panels:
             panel["ref_pt"] = panel["ref_pt"] - mass_center
         for pt in self.__mass_pts:
             pt["r"] = pt["r"] - mass_center
+        for pt in self.__reader.get_attach_pts():
+            self.__attach_pts.append(pt - mass_center)
+
+    def __step(self):
+        val = self.__reader.read()
+        type_value = self.__reader.get_type()
+        if type_value == reader_3d.Reader3DBase.TYPE_FORCE:
+            self.__step_read_force(val, self.__attach_pts)
+        else:
+            self.__step_read_acceleration(val, self.__attach_pts)
 
     def __step_read_force(self, pull_forces, attach_pts, **args):
         """
@@ -215,7 +234,7 @@ class Dynamic3D:
         except np.linalg.linalg.LinAlgError:
             inv = np.linalg.pinv(matrix_t2a)
         pull_forces = inv.dot(np.array(target))
-        self.__step_read_force(pull_forces, attach_pts, other=(f_other, tor_other))        
+        self.__step_read_force(pull_forces, attach_pts, other=(f_other, tor_other))
 
     def __get_f_tor_no_pull(self):
         angular_mass = self.__angular_mass()
