@@ -3,9 +3,20 @@
 风筝拥有多块可以自行设置位置的面板,风筝的质量仍然集中在一个点
 风筝受到的力是3维的，但是风筝在运动的同时原点（基站）也在运动，且两者沿着z轴方向的速度相同
 只有一根绳子拉着风筝，作用点即在这个点上
+观察风筝运动的坐标系如下：
+        y
+        |
+        |
+        |
+        o---------x
+       /
+      /
+     z
+注意重力始终沿着-y方向
 """
 
 import sys
+#import pdb
 import os
 import numpy as np
 import reader_2_5d
@@ -16,9 +27,13 @@ sys.path.append(os.path.abspath(
 import util
 #pylint: enable=wrong-import-position
 
+
 class Dynamic:
     """
-    2.5维动态求解器，所有的向量（包括点）都是以numpy中的1维向量来存储的，多个向量通过2维array来存储，每个向量对应最后一维
+    2.5维动态求解器
+    所有的向量（包括点）都是以numpy中的1维向量来存储的
+    多个向量通过2维array来存储
+    每个向量对应矩阵的各个行(而不是通常的列向量)
     """
     PANEL_KEYS = ["c_l", "c_d", "plane_basis", "leading_edge", "ref_pt", "area"]
     BORDER_COND_KEYS = ["r0", "v0"]
@@ -33,7 +48,7 @@ class Dynamic:
         """
         所有的key参见Dynamic.PANEL_KEYS
         暂定ref_point是f_d和f_l相同的作用点坐标，也是计算v_rel时风筝速度的参考点坐标,
-        **panel中所有向量的基向量和计算风筝轨迹的坐标系的基向量是相同的**
+        **panel中所有向量的基向量和计算风筝轨迹的坐标系的基向量是相同的,坐标系的原点是绳子的附着点**
         plane_basis是两个彼此正交的单位向量
         leading_edge 是单位方向向量
         """
@@ -80,6 +95,9 @@ class Dynamic:
         else:
             self.__step_read_acceleration(val)
 
+    def get_state(self):
+        return (self.__r, self.__v)
+
     def __step_read_force(self, force, **args):
         """
         根据拉力测试仪读取的拉力更新风筝的状态，
@@ -87,13 +105,13 @@ class Dynamic:
         force只是一个值，如果args中有other键，则使用这个作为其他力
         """
         proj_xy = np.array([
-            [0, 0, 0],
-            [0, 0, 0],
-            [0, 0, 1]
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 0]
         ])
         r_unit = self.__r / np.linalg.norm(self.__r)
         force_other = args.get("other", self.__compute_force_no_pull())
-        force_pull = force * r_unit
+        force_pull = -force * r_unit    #拉力以径向的负方向为正方向
         acceleration = (force_other + force_pull) / self.__mass
         #仅在xy分量更新r
         self.__r = self.__r + proj_xy.dot(self.__v) * self.__step_interval
@@ -120,9 +138,9 @@ class Dynamic:
         norm_r = np.linalg.norm(self.__r)
         r_unit = self.__r / norm_r
         proj_xy = np.array([
-            [0, 0, 0],
-            [0, 0, 0],
-            [0, 0, 1]
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 0]
         ])
         #位置转换矩阵
         transformation = np.array([
@@ -131,13 +149,14 @@ class Dynamic:
         #用于计算附加速度的位置转换矩阵导数
         tmp = -self.__r.dot(self.__v) / (norm_r ** 3) * self.__r + self.__v / norm_r
         deri_transformation = proj_xy.dot(np.array([
-            tmp, rot_90_xy(tmp), [0, 0, 0]
+            tmp, rot_90_xy.dot(tmp), [0, 0, 0]
         ]).transpose())
 
+#        pdb.set_trace()
         lst_fl = []
         lst_fd = []
         for panel in self.__panels:
-            v_rel = self.__v_wind - (self.__v + deri_transformation.dot(self.__r))
+            v_rel = self.__v_wind - (self.__v + deri_transformation.dot(panel["ref_pt"]))
             dir_fl = np.cross(transformation.dot(panel["leading_edge"]), v_rel)
             dir_fl = dir_fl / np.linalg.norm(dir_fl)
             f_l = 0.5 * self.__density * panel["area"] * \
@@ -151,5 +170,8 @@ class Dynamic:
             lst_fd.append(f_d)
             lst_fl.append(f_l)
 
-        force = sum(lst_fd + lst_fl + np.array([0, 0, self.__mass * -9.8]))
+#        pdb.set_trace()
+
+        #重力沿着y轴方向
+        force = sum(lst_fd + lst_fl + np.array([0, self.__mass * -9.8, 0]))
         return force
