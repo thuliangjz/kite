@@ -97,8 +97,8 @@ def vec_plane_angle(vec, plane):
     phi = get_angle_2d(np.array(proj_xy), np.array([1, 0]))
     proj_z = vec.dot(np.cross(plane[0], plane[1]))
     theta = get_angle_2d(
+        np.array([0, 1]),
         np.array([proj_z, np.linalg.norm(proj_xy)]),
-        np.array([0, 1])
     )
     return (phi, theta)
 

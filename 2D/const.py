@@ -1,9 +1,7 @@
-#!../bin/python3.6
 import sys, os
 sys.path.append(os.path.abspath(os.path.join('..')))
 import util
 import math
-import pdb
 
 class ConstantSolverError(Exception):
     ERR_EXPLORE_FAILED = "exploration failed"

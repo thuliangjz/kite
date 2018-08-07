@@ -16,7 +16,6 @@
 """
 
 import sys
-#import pdb
 import os
 import numpy as np
 import reader_2_5d
@@ -43,13 +42,15 @@ class Dynamic:
         util.check_instance(reader, reader_2_5d.ReaderBase)
         self.__reader = reader
         self.__step_interval = step_interval
+        self.__force_last = {}
 
     def add_panel(self, panel):
         """
         所有的key参见Dynamic.PANEL_KEYS
         暂定ref_point是f_d和f_l相同的作用点坐标，也是计算v_rel时风筝速度的参考点坐标,
-        **panel中所有向量的基向量和计算风筝轨迹的坐标系的基向量是相同的,坐标系的原点是绳子的附着点**
-        plane_basis是两个彼此正交的单位向量
+        传入的panel中所有向量的基向量和计算风筝轨迹的坐标系的基向量是相同的,表示相应向量（点）在风筝位于x轴上时的方向（位置），
+        绳子一端附着在观察坐标系中的原点，另一端附着在panel使用的坐标系的原点(这个点和风筝抽象的质点位置重合)
+        plane_basis是两个彼此正交的单位向量,由于numpy的qr分解会导致正方向变化，故不对这组向量进行归一化
         leading_edge 是单位方向向量
         """
         util.check_keys(panel, self.PANEL_KEYS)
@@ -63,7 +64,6 @@ class Dynamic:
         #正规化
         leading_edge = panel["leading_edge"]
         panel["leading_edge"] = leading_edge / np.linalg.norm(leading_edge)
-        panel["plane_basis"] = np.linalg.qr(panel["plane_basis"].transpose())[0].transpose()
         self.__panels.append(panel)
 
     def set_consts(self, consts):
@@ -98,6 +98,9 @@ class Dynamic:
     def get_state(self):
         return (self.__r, self.__v)
 
+    def get_force(self):
+        return dict(**self.__force_last)
+
     def __step_read_force(self, force, **args):
         """
         根据拉力测试仪读取的拉力更新风筝的状态，
@@ -117,6 +120,7 @@ class Dynamic:
         self.__r = self.__r + proj_xy.dot(self.__v) * self.__step_interval
         self.__v = self.__v + acceleration * self.__step_interval
         self.__logic_timer += self.__step_interval
+        self.__force_last["pull"] = force_pull
 
     def __step_read_acceleration(self, acceleration):
         """
@@ -152,26 +156,28 @@ class Dynamic:
             tmp, rot_90_xy.dot(tmp), [0, 0, 0]
         ]).transpose())
 
-#        pdb.set_trace()
         lst_fl = []
         lst_fd = []
         for panel in self.__panels:
             v_rel = self.__v_wind - (self.__v + deri_transformation.dot(panel["ref_pt"]))
             dir_fl = np.cross(transformation.dot(panel["leading_edge"]), v_rel)
-            dir_fl = dir_fl / np.linalg.norm(dir_fl)
+            dir_fl = dir_fl / np.linalg.norm(dir_fl) if np.linalg.norm(dir_fl) != 0 \
+                else np.array([0, 0, 0])
             f_l = 0.5 * self.__density * panel["area"] * \
                 panel["c_l"].compute(util.vec_plane_angle(v_rel,\
-                    panel["plane_basis"].dot(deri_transformation.transpose())))\
+                    panel["plane_basis"].dot(transformation.transpose())))\
                 * np.linalg.norm(v_rel) ** 2 * dir_fl
             f_d = 0.5 * self.__density * panel["area"] * \
                 panel["c_d"].compute(util.vec_plane_angle(v_rel,\
-                    panel["plane_basis"].dot(deri_transformation.transpose())))\
+                    panel["plane_basis"].dot(transformation.transpose())))\
                 * np.linalg.norm(v_rel) * v_rel
             lst_fd.append(f_d)
             lst_fl.append(f_l)
 
-#        pdb.set_trace()
 
         #重力沿着y轴方向
-        force = sum(lst_fd + lst_fl + np.array([0, self.__mass * -9.8, 0]))
+        force = sum(lst_fd + lst_fl) + np.array([0, self.__mass * -9.8, 0])
+        self.__force_last["force_wind"] = sum(lst_fd + lst_fl)
+        self.__force_last["force_fl"] = lst_fl.copy()
+        self.__force_last["force_fd"] = lst_fd.copy()
         return force

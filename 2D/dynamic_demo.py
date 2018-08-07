@@ -10,7 +10,6 @@ import util
 import dynamic
 import reader
 import math
-import pdb
 import const
 #定义演示用的c_d和c_l函数对象
 class DemoDragFunction(util.KiteFunction):
