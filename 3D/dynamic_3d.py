@@ -23,13 +23,28 @@ class Dynamic3D:
     dynamic.step()
     dynamic.get_state()
     由于numpy和matlab的区别，所有向量，都是1Darray(行向量), 矩阵是通常写法的转置
+    Dynamic3D在实现时有3个坐标系：
+    构建坐标系
+        用户在这个坐标系中构建风筝,用于设置add_panel和add_mass_point中的所有向量
+    运动坐标系
+        用于描述风筝质心的运动
+    质心坐标系
+        用于描述风筝姿态的变化
+    三个坐标系拥有相同的基矢量:
+        z
+        |
+        |
+        |
+        o------y
+       /
+      /
+     x
     """
     PANEL_KEYS = ["c_l", "c_d", "plane_basis", "leading_edge", "ref_pt", "area"]
     MASS_PT_KEYS = ["m", "r"]
     INIT_COND_KEYS = ["T0", "r0", "v0", "L0", "v_wind", "density"]
     def __init__(self, reader, step_interval):
-        if not isinstance(reader, reader_3d.Reader3DBase):
-            raise ValueError("reader must be subclass of Reader3DBase")
+        util.check_instance(reader, reader_3d.Reader3DBase)
         self.__reader = reader
         self.__panels = []
         self.__mass_pts = []
@@ -39,7 +54,7 @@ class Dynamic3D:
         所有的key参见Dynamic3D.PANNEL_KEYS
         暂定ref_point是f_d和f_l相同的作用点坐标，也是计算v_rel时风筝速度的参考点坐标,
             注意这个坐标不是质心系的坐标，参考坐标系的中心是在输入时任意选定的
-        plane_basis是两个彼此正交的单位向量
+        plane_basis是两个彼此正交的单位向量(不适用np.linalg.qr是考虑到方向可能发生变化)
         leading_edge 是单位方向向量
         """
         util.check_keys(pannel, self.PANEL_KEYS)
@@ -52,8 +67,6 @@ class Dynamic3D:
             util.check_vector(pannel["plane_basis"][i], 3)
         #正规化
         pannel["leading_edge"] = pannel["leading_edge"] / np.linalg.norm(pannel["leading_edge"])
-        #reduce模式得到的应该是一个3*2的矩阵q s.t q.T.dot(q) = 0,采用转置保证向量位于行上
-        pannel["plane_basis"] = np.linalg.qr(pannel["plane_basis"])[0].transpose()
 
         self.__panels.append(pannel)
     def add_mass_point(self, mass_pt):
@@ -69,10 +82,9 @@ class Dynamic3D:
         """
         设置边界条件
         参数键值参见Dynamic3D.INIT_COND_KEYS
-        注意T0传入的时候应该是一个3*3的正交矩阵
-        r0是参考坐标系原点（不是质心）的初始位置
-        v0是整个风筝质心的初始速度
-        L0是初始状态下质心坐标系中的角动量
+        注意T0传入的时候应该是一个3*3的正交矩阵，用于设置初始状态下风筝朝向
+        r0是参考坐标系原点（不是质心风筝质心）的初始位置
+        v0是整个风筝质心的初始速度,L0是初始状态下质心坐标系中的角动量
         """
         util.check_keys(init_cond, self.INIT_COND_KEYS)
         util.check_vector(init_cond["T0"], 3)
@@ -106,7 +118,7 @@ class Dynamic3D:
         for pt in self.__reader.get_attach_pts():
             self.__attach_pts.append(pt - mass_center)
 
-    def __step(self):
+    def step(self):
         val = self.__reader.read()
         type_value = self.__reader.get_type()
         if type_value == reader_3d.Reader3DBase.TYPE_FORCE:
@@ -130,15 +142,18 @@ class Dynamic3D:
         pull_forces_vec = []
         for force, attach_pt in zip(pull_forces, attach_pts):
             attach_pt_abs = transformation.dot(attach_pt) + self.__rc
-            pull_forces_vec.append(force * attach_pt_abs / np.linalg.norm(attach_pt_abs))
+            pull_forces_vec.append(-force * attach_pt_abs / np.linalg.norm(attach_pt_abs))
 
         a_centroid = sum(pull_forces_vec.append(f_other)) / self.__mass_total
 
-        torque_postions = [transformation.dot(pt) for pt in attach_pts]
-        torque = sum([np.cross(position, force) for \
-            position, force in zip(torque_postions, pull_forces_vec)]) + tor_other
+        torque = sum([np.cross(position, force) for position, force in \
+            zip(
+                [transformation.dot(pt) for pt in attach_pts],
+                pull_forces_vec
+            )]) + tor_other
 
         self.__l = self.__l + torque * self.__step_interval
+        #numpy的叉乘规则，矩阵和1d array相乘，是矩阵的各个行和该数组进行叉乘得到新的行
         #由于transformation的列向量实际上是__transformation的行向量，直接用cross就可以，这里有矩阵和向量叉乘
         self.__transformation = self.__transformation + \
             np.cross(angular_velocity, self.__transformation) \
@@ -155,8 +170,10 @@ class Dynamic3D:
         angular_mass = self.__angular_mass()
         angular_velocity = self.__l / angular_mass
         transformation = self.__transformation.transpose()
-        #有矩阵和向量叉乘，deriv_transformation希望得到正常的矩阵
+        #deriv_transformation = omiga `cross` transformation
         deriv_transformation = np.cross(angular_velocity, self.__transformation).transpose()
+
+        #计算角动量和质心加速度关于拉力的仿射变换矩阵(op_a_c和op_deri_l)
         f_other, tor_other = self.__get_f_tor_no_pull()
         lst_f = []
         lst_tor = []
@@ -165,14 +182,11 @@ class Dynamic3D:
             r_abs = self.__rc + r_rel
             r_abs_unit = r_abs / np.linalg.norm(r_abs)
             lst_f.append(r_abs_unit)
-            lst_tor.append(np.cross(r_rel, r_abs_unit))
-        matrix_f = np.array(lst_f + [f_other,]).transpose()
-        matrix_tor = np.array(lst_tor + [tor_other,]).transpose()
+            lst_tor.append(np.cross(r_abs_unit, r_rel))
         dimension = len(accelerations)
-        #计算角动量和质心加速度关于拉力的仿射变换矩阵
-        op_deri_l = util.affinization(matrix_tor, False, dimension) + \
-            util.affinization(tor_other, True, dimension)
-        op_a_c = util.affinization(matrix_f, False, dimension) + \
+        op_deri_l = (util.affinization(np.array(lst_tor).transpose(), False, dimension) + \
+            util.affinization(tor_other, True, dimension)) / self.__mass_total
+        op_a_c = util.affinization(np.array(lst_f).transpose(), False, dimension) + \
             util.affinization(f_other, True, dimension)
         #计算角动量微分关于拉力的仿射变换矩阵
         norm_l = np.linalg.norm(self.__l)
@@ -183,22 +197,32 @@ class Dynamic3D:
                 self.__l[None].transpose().dot(self.__l[None].dot(op_deri_l))
             lst_op_deri_ang_v_1 = []
             for pt in self.__mass_pts:
-                #(T' * r_m[i]) `cross` l_unit
-                op_deri_ang_v_1 = util.affinization(\
-                    np.cross(deriv_transformation.dot(pt["r"]), l_unit), True, dimension)
-                #tmp = tmp + (T * r_m[i]) `cross` tmp0
-                #注意有矩阵和向量的叉乘
-                op_deri_ang_v_1 = op_deri_ang_v_1 + \
-                    np.cross(transformation.dot(pt["r"]), op_deri_ang_v_0.transpose())
-                #tmp = 2 * m * ((T * r_m[i]) `cross` l_unit) `dot` tmp
-                op_deri_ang_v_1 = 2 * pt["m"] * \
-                    np.cross(transformation.dot(pt["r"]), l_unit)[None].dot(op_deri_ang_v_1)
-                lst_op_deri_ang_v_1.append(op_deri_ang_v_1)
+                #循环计算：
+                #2 * m * ((T * r_m[i]) `cross` l_unit) `dot`
+                #(
+                #   T' * r_m[i]) `cross` l_unit + (T * r_m[i]) `cross`
+                #   (
+                #       l' / |l| - l * (l `dot` l') / |l|^3
+                #   )
+                #)
+                lst_op_deri_ang_v_1.append(
+                    2 * pt["m"] * \
+                    np.cross(transformation.dot(pt["r"]), l_unit)[None].dot(
+                        util.affinization(\
+                            np.cross(deriv_transformation.dot(pt["r"]), l_unit),\
+                            True, dimension) + \
+                        np.cross(\
+                            transformation.dot(pt["r"]), \
+                            op_deri_ang_v_0.transpose()\
+                        ).transpose()\
+                    )
+                )
+            #求和这一步实际上是计算出了转动惯量导数的仿射矩阵
             op_deri_ang_v = sum(lst_op_deri_ang_v_1)
             op_deri_ang_v = op_deri_l / angular_mass - \
                 angular_mass ** -2 * self.__l[None].transpose().dot(op_deri_ang_v)
         else:
-            #注意这种情况下转动惯量的方向不是正确的，但是这样处理的好处是使得方程转变为线性方程，而且这种情况几乎不出现
+            #注意这种情况下转动惯量不是正确的，但是这样处理的好处是使得方程转变为线性方程，而且这种情况几乎不出现
             op_deri_ang_v = op_deri_l / angular_mass
 
         #生成方程组
@@ -207,15 +231,17 @@ class Dynamic3D:
         for a_attach_pt, r_attach_rel in zip(accelerations, attach_pts):
             v_attach_pt = np.cross(angular_velocity, transformation.dot(r_attach_rel)) + self.__vc
             r_attach_abs = transformation.dot(r_attach_rel) + self.__rc
-            op_a_attach = np.cross(\
-                            op_deri_ang_v.transpose(), \
-                            transformation.dot(r_attach_rel))\
-                        .transpose() + \
-                        util.affinization(\
-                            np.cross(angular_velocity, \
-                                deriv_transformation.dot(r_attach_rel)), \
-                            True, dimension) + \
-                        op_a_c
+            op_a_attach = \
+                np.cross(\
+                    op_deri_ang_v.transpose(), \
+                    transformation.dot(r_attach_rel)\
+                ).transpose() + \
+                util.affinization(\
+                    np.cross(\
+                        angular_velocity, \
+                        deriv_transformation.dot(r_attach_rel)\
+                    ), True, dimension\
+                ) + op_a_c
             norm_r = np.linalg.norm(r_attach_abs)
             op_a_rope = \
                 util.affinization(
@@ -224,6 +250,7 @@ class Dynamic3D:
                         / norm_r ** 3).dot(v_attach_pt), \
                     True, dimension) + \
                 (r_attach_abs / norm_r)[None].dot(op_a_attach)
+            #转化成1D array
             op_a_rope = op_a_rope[0]
             rows.append(op_a_rope[:dimension])
             target.append(a_attach_pt - op_a_rope[dimension])
@@ -248,20 +275,19 @@ class Dynamic3D:
                 transformation.dot(panel["ref_pt"]))
             v_rel = self.__v_wind - (v_rotate + self.__vc)
 
-            if np.linalg.norm(v_rel) == 0:
-                lst_f_l.append(np.array([0, 0, 0]))
-                continue
             #注意plane_basis是一个2*3的矩阵，dot在矩阵情况下做正常的乘法，需要先转置，转置完成再调用transpose将两个向量放到行上
-            angle_tpl = util.vec_plane_angle(self.__v_wind, \
+            angle_tpl = util.vec_plane_angle(v_rel, \
                 transformation.dot(panel["plane_basis"].transpose()).transpose())
 
-            f_l_unit = np.cross(transformation.dot(panel["leading_edge"]), v_rel)\
-                / np.linalg.norm(f_l_unit)
-
-            f_l = 0.5 * self.__density * panel["area"] *\
-                np.linalg.norm(v_rel) ** 2 *\
-                panel["c_l"].compute(angle_tpl) *\
-                f_l_unit
+            f_l_dir = np.cross(transformation.dot(panel["leading_edge"]), v_rel)
+            if np.array_equal(f_l_dir, np.array([0, 0, 0])):
+                #应对v_rel == 0或者v_rel与该块panel当时的leading_edge平行
+                f_l = np.array([0, 0, 0])
+            else:
+                f_l = 0.5 * self.__density * panel["area"] *\
+                    np.linalg.norm(v_rel) ** 2 *\
+                    panel["c_l"].compute(angle_tpl) *\
+                    f_l_dir / np.linalg.norm(f_l_dir)
 
             f_d = 0.5 * self.__density * panel["area"] *\
                 np.linalg.norm(v_rel) * v_rel *\
@@ -271,11 +297,10 @@ class Dynamic3D:
             lst_f_d.append(f_d)
         lst_f_tor_other = lst_f_l + lst_f_d
         f_other = sum(lst_f_tor_other + [np.array([0, 0, -self.__mass_total * 9.8]),])
-        reference_pts = [panel["ref_pt"] for panel in self.__panels]
-        torque_postions = reference_pts + reference_pts
-        torque_postions = [transformation.dot(pt) for pt in torque_postions]
+        torque_positions = [transformation.dot(panel["ref_pt"]) \
+            for panel in self.__panels + self.__panels]
         torque_other = sum([np.cross(position, force) for \
-                    position, force in zip(torque_postions, lst_f_tor_other)])
+                    position, force in zip(torque_positions, lst_f_tor_other)])
         return (f_other, torque_other)
 
 
