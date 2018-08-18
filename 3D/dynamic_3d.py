@@ -49,6 +49,7 @@ class Dynamic3D:
         self.__panels = []
         self.__mass_pts = []
         self.__step_interval = step_interval
+        self.__states = {}
     def add_pannel(self, pannel):
         """
         所有的key参见Dynamic3D.PANNEL_KEYS
@@ -104,7 +105,7 @@ class Dynamic3D:
 
         #辅助变量计算
         self.__mass_total = sum([pt["m"] for pt in self.__mass_pts])
-        mass_center = sum([pt["r"] for pt in self.__mass_pts]) / self.__mass_total
+        mass_center = sum([pt["r"] * pt["m"] for pt in self.__mass_pts]) / self.__mass_total
 
         #计算质心在空间中的初始位置
         self.__rc = init_cond["r0"] + mass_center
@@ -118,8 +119,18 @@ class Dynamic3D:
         for pt in self.__reader.get_attach_pts():
             self.__attach_pts.append(pt - mass_center)
 
+    def get_state(self):
+        return self.__states
+
+    def get_rope_length(self):
+        transformation = self.__transformation.transpose()
+        rope_lengths = []
+        for pt in self.__attach_pts:
+            rope_lengths.append(np.linalg.norm(transformation.dot(pt) + self.__rc))
+        return rope_lengths
+
     def step(self):
-        val = self.__reader.read()
+        val = self.__reader.read(self.__timer)
         type_value = self.__reader.get_type()
         if type_value == reader_3d.Reader3DBase.TYPE_FORCE:
             self.__step_read_force(val, self.__attach_pts)
@@ -137,6 +148,7 @@ class Dynamic3D:
         angular_velocity = self.__l / angular_mass
         transformation = self.__transformation.transpose()
 
+
         f_other, tor_other = args.get("other", self.__get_f_tor_no_pull())
         #计算拉力向量
         pull_forces_vec = []
@@ -144,13 +156,32 @@ class Dynamic3D:
             attach_pt_abs = transformation.dot(attach_pt) + self.__rc
             pull_forces_vec.append(-force * attach_pt_abs / np.linalg.norm(attach_pt_abs))
 
-        a_centroid = sum(pull_forces_vec.append(f_other)) / self.__mass_total
-
+        a_centroid = sum(pull_forces_vec + [f_other, ]) / self.__mass_total
         torque = sum([np.cross(position, force) for position, force in \
             zip(
                 [transformation.dot(pt) for pt in attach_pts],
                 pull_forces_vec
             )]) + tor_other
+        #pylint: disable=c0301, w0105
+        '''
+        #对求解结果进行反向的验证
+        lst_a_rope = []
+        deriv_angular_mass = sum([
+            2 * pt["m"] * np.cross(transformation.dot(pt["r"]), self.__l / np.linalg.norm(self.__l)).dot(\
+            (np.cross(np.cross(angular_velocity, transformation.dot(pt["r"])), self.__l / np.linalg.norm(self.__l)) + \
+            np.cross(transformation.dot(pt["r"]), (torque / np.linalg.norm(self.__l) - self.__l * self.__l.dot(torque) / np.linalg.norm(self.__l) ** 3))))\
+            for pt in self.__mass_pts
+        ])
+        deriv_angular_v = (torque * angular_mass - deriv_angular_mass * self.__l) / angular_mass ** 2
+        for r_a in attach_pts:
+            r_ta = transformation.dot(r_a)
+            r_taa = self.__rc + r_ta
+            v_taa = np.cross(angular_velocity, r_ta) + self.__vc
+            a_taa = np.cross(deriv_angular_v, transformation.dot(r_a)) + np.cross(angular_velocity, np.cross(angular_velocity, self.__transformation).transpose().dot(r_a)) + a_centroid
+            a_rope = (v_taa.dot(v_taa) + r_taa.dot(a_taa)) / np.linalg.norm(r_taa) - r_taa.dot(v_taa) ** 2 / np.linalg.norm(r_taa) ** 3
+            lst_a_rope.append(a_rope)
+        '''
+        #pylint: enable=c0301, w0105
 
         self.__l = self.__l + torque * self.__step_interval
         #numpy的叉乘规则，矩阵和1d array相乘，是矩阵的各个行和该数组进行叉乘得到新的行
@@ -158,10 +189,35 @@ class Dynamic3D:
         self.__transformation = self.__transformation + \
             np.cross(angular_velocity, self.__transformation) \
             * self.__step_interval
+        #transformation归一化(保持方向的Schmidt正交化)
+        self.__transformation[0] = self.__transformation[0] / \
+            np.linalg.norm(self.__transformation[0])
+
+        self.__transformation[1] = self.__transformation[1] - \
+            self.__transformation[1].dot(self.__transformation[0]) * \
+            self.__transformation[0]
+        self.__transformation[1] = self.__transformation[1] / \
+            np.linalg.norm(self.__transformation[1])
+
+        self.__transformation[2] = self.__transformation[2] - \
+            self.__transformation[2].dot(self.__transformation[0]) * self.__transformation[0] - \
+            self.__transformation[2].dot(self.__transformation[1]) * self.__transformation[1]
+        self.__transformation[2] = self.__transformation[2] / \
+            np.linalg.norm(self.__transformation[2])
+
         self.__rc = self.__rc + self.__vc * self.__step_interval
         self.__vc = self.__vc + a_centroid * self.__step_interval
 
         self.__timer += self.__step_interval
+
+        self.__states["v_angular"] = angular_velocity
+        self.__states["rc"] = self.__rc
+        self.__states["vc"] = self.__vc
+        self.__states["l"] = self.__l
+        self.__states["transformation"] = transformation
+        self.__states["pull_forces"] = pull_forces
+
+
 
     def __step_read_acceleration(self, accelerations, attach_pts):
         """
@@ -181,20 +237,20 @@ class Dynamic3D:
             r_rel = transformation.dot(pt)
             r_abs = self.__rc + r_rel
             r_abs_unit = r_abs / np.linalg.norm(r_abs)
-            lst_f.append(r_abs_unit)
-            lst_tor.append(np.cross(r_abs_unit, r_rel))
+            lst_f.append(-r_abs_unit)
+            lst_tor.append(np.cross(r_rel, -r_abs_unit))
         dimension = len(accelerations)
         op_deri_l = (util.affinization(np.array(lst_tor).transpose(), False, dimension) + \
-            util.affinization(tor_other, True, dimension)) / self.__mass_total
-        op_a_c = util.affinization(np.array(lst_f).transpose(), False, dimension) + \
-            util.affinization(f_other, True, dimension)
+            util.affinization(tor_other, True, dimension))
+        op_a_c = (util.affinization(np.array(lst_f).transpose(), False, dimension) + \
+            util.affinization(f_other, True, dimension)) / self.__mass_total
         #计算角动量微分关于拉力的仿射变换矩阵
         norm_l = np.linalg.norm(self.__l)
         if norm_l != 0:
             l_unit = self.__l / norm_l
             #l' / |l| - l * (l `dot` l') / |l|^3，这部分会被在下面反复使用，避免重复计算
             op_deri_ang_v_0 = op_deri_l / norm_l - \
-                self.__l[None].transpose().dot(self.__l[None].dot(op_deri_l))
+                self.__l[None].transpose().dot(self.__l[None].dot(op_deri_l)) / norm_l ** 3
             lst_op_deri_ang_v_1 = []
             for pt in self.__mass_pts:
                 #循环计算：
@@ -218,9 +274,9 @@ class Dynamic3D:
                     )
                 )
             #求和这一步实际上是计算出了转动惯量导数的仿射矩阵
-            op_deri_ang_v = sum(lst_op_deri_ang_v_1)
+            op_deri_ang_mass = sum(lst_op_deri_ang_v_1)
             op_deri_ang_v = op_deri_l / angular_mass - \
-                angular_mass ** -2 * self.__l[None].transpose().dot(op_deri_ang_v)
+                angular_mass ** -2 * self.__l[None].transpose().dot(op_deri_ang_mass)
         else:
             #注意这种情况下转动惯量不是正确的，但是这样处理的好处是使得方程转变为线性方程，而且这种情况几乎不出现
             op_deri_ang_v = op_deri_l / angular_mass
@@ -245,9 +301,9 @@ class Dynamic3D:
             norm_r = np.linalg.norm(r_attach_abs)
             op_a_rope = \
                 util.affinization(
-                    (v_attach_pt / norm_r - \
+                    [(v_attach_pt / norm_r - \
                         r_attach_abs * r_attach_abs.dot(v_attach_pt) \
-                        / norm_r ** 3).dot(v_attach_pt), \
+                        / norm_r ** 3).dot(v_attach_pt), ], \
                     True, dimension) + \
                 (r_attach_abs / norm_r)[None].dot(op_a_attach)
             #转化成1D array
@@ -262,6 +318,8 @@ class Dynamic3D:
             inv = np.linalg.pinv(matrix_t2a)
         pull_forces = inv.dot(np.array(target))
         self.__step_read_force(pull_forces, attach_pts, other=(f_other, tor_other))
+
+
 
     def __get_f_tor_no_pull(self):
         angular_mass = self.__angular_mass()
@@ -295,6 +353,7 @@ class Dynamic3D:
 
             lst_f_l.append(f_l)
             lst_f_d.append(f_d)
+
         lst_f_tor_other = lst_f_l + lst_f_d
         f_other = sum(lst_f_tor_other + [np.array([0, 0, -self.__mass_total * 9.8]),])
         torque_positions = [transformation.dot(panel["ref_pt"]) \

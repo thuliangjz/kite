@@ -7,13 +7,12 @@ class Reader3DBase:
     TYPE_FORCE = 0
     TYPE_ACCELERATION = 1
     def __init__(self):
-        pass
+        self.__attach_pts = []
     def read(self, time):
         raise NotImplementedError("implement your own read method")
     def get_type(self):
         raise NotImplementedError("implement your own read method")
     def set_attach_pts(self, lst_pts):
-        raise NotImplementedError()
+        self.__attach_pts = lst_pts
     def get_attach_pts(self):
-        raise NotImplementedError()
-   
+        return self.__attach_pts
