@@ -119,7 +119,7 @@ def create_solver(data, reader, step):
     """
     solver = dynamic_3d.Dynamic3D(reader, step)
     for panel in data["panels"]:
-        solver.add_pannel(panel)
+        solver.add_panel(panel)
     for mass_pt in data["mass_pts"]:
         solver.add_mass_point(mass_pt)
     return solver

@@ -17,7 +17,7 @@ class Dynamic3D:
     三维风筝模拟器
     调用模式:
     dynamic = Dynamic3D(reader, step_interval)
-    dynamic.add_pannel(...)
+    dynamic.add_panel(...)
     dynamic.add_mass_pt(...)
     dynamic.init(...)
     dynamic.step()
@@ -50,7 +50,7 @@ class Dynamic3D:
         self.__mass_pts = []
         self.__step_interval = step_interval
         self.__states = {}
-    def add_pannel(self, pannel):
+    def add_panel(self, pannel):
         """
         所有的key参见Dynamic3D.PANNEL_KEYS
         暂定ref_point是f_d和f_l相同的作用点坐标，也是计算v_rel时风筝速度的参考点坐标,
@@ -210,6 +210,7 @@ class Dynamic3D:
 
         self.__timer += self.__step_interval
 
+        self.__states = {}
         self.__states["v_angular"] = angular_velocity
         self.__states["rc"] = self.__rc
         self.__states["vc"] = self.__vc
