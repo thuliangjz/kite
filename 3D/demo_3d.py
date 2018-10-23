@@ -208,17 +208,24 @@ def animation_input_function(event):
     按U回到初始状态
     ESC回到上一级
     """
-    if GLOBAL_OBJECTS["is_playing"]:
+    handler = GLOBAL_OBJECTS["ani_input_handler"]
+    if handler.is_playing:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
-            GLOBAL_OBJECTS["is_playing"] = False
+            handler.is_playing = False
         else:
-            GLOBAL_OBJECTS["solver"].step()
-            state = GLOBAL_OBJECTS["solver"].get_state()
+            solver = GLOBAL_OBJECTS["solver"]
+            solver.step()
+            state = solver.get_state()
             GLOBAL_OBJECTS["current_state"] = state
             GLOBAL_OBJECTS["state_list"].append(state)
+            interval = solver.get_interval()
+            handler.time_played += interval
+            if handler.time_played > handler.max_play_time:
+                handler.is_playing = False
+                handler.time_played = 0
     elif event.type == pygame.KEYDOWN:
         if event.key == pygame.K_SPACE:
-            GLOBAL_OBJECTS["is_playing"] = True
+            handler.is_playing = True
         elif event.key == pygame.K_RIGHT:
             GLOBAL_OBJECTS["solver"].step()
             state = GLOBAL_OBJECTS["solver"].get_state()
@@ -322,16 +329,29 @@ def set_input_func(str_in):
     rules = [
         (r"d_angle[\s]*(.*)", "angle_delta", angle_input_converter),
         (r"d_pos[\s]*(.*)", "pos_delta", float),
+        (r"play_max[\s]*(.*)", "ani_input_handler", "max_play_time", int, "attr"),
+        (r"step[\s]*(.*)", "solver", "set_interval", float, "function")
     ]
     for rule in rules:
         match = re.match(rule[0], str_in)
         if match is not None:
             try:
-                GLOBAL_OBJECTS[rule[1]] = rule[2](match.groups()[-1])
+                if len(rule) == 3:
+                    GLOBAL_OBJECTS[rule[1]] = rule[2](match.groups()[-1])
+                elif len(rule) == 5 and rule[4] == "attr":
+                    setattr(GLOBAL_OBJECTS[rule[1]], rule[2], rule[3](match.groups()[-1]))
+                elif len(rule) == 5 and rule[4] == "function":
+                    getattr(GLOBAL_OBJECTS[rule[1]], rule[2])(rule[3](match.groups()[-1]))
                 return ("set", "设置成功")
             except ValueError:
                 return ("set", "数值错误")
     return ("set", "未找到设置项")
+
+class AniInputHandler:
+    def __init__(self):
+        self.time_played = 0
+        self.max_play_time = 1
+        self.is_playing = False
 
 GLOBAL_OBJECTS = {
     "init_state": {
@@ -352,11 +372,12 @@ GLOBAL_OBJECTS = {
     "state_list": [],
     "angle_delta": math.pi / 36,
     "pos_delta": 1,
-    #等待在main中进行初始化的键
-    # "current_view_angle"
-    # "current_view_pos"
-    # "current_state"
-    # "solver"
+    "ani_input_handler": AniInputHandler()
+#等待在main中进行初始化的键
+# "current_view_angle"
+# "current_view_pos"
+# "current_state"
+# "solver"
 }
 
 
@@ -385,7 +406,8 @@ STATES = {
     "set":{
         "is_final": False,
         "input_func": set_input_func,
-        "greet": "设置移动相机时的角度增量（d_angle *）和位置增量(d_pos *)"
+        "greet": "设置移动相机时的角度增量（d_angle *）,位置增量(d_pos *)" + \
+            "最大动画播放时间(play_max *)"
     }
 }
 
@@ -432,7 +454,7 @@ def main():
     #reader = reader_3d.Reader3DConstF(2.5)
     reader = reader_3d.Reader3DStableLength()
     reader.set_attach_pts(SIMPLE_KITE["attach_pts"])
-    GLOBAL_OBJECTS["solver"] = dynamic_3d.Dynamic3D(reader, 0.01)
+    GLOBAL_OBJECTS["solver"] = dynamic_3d.Dynamic3D(reader, 0.0001)
     for panel in SIMPLE_KITE["panels"]:
         GLOBAL_OBJECTS["solver"].add_panel(panel)
     for pt in SIMPLE_KITE["mass_pts"]:

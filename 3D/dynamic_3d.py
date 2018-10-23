@@ -119,6 +119,12 @@ class Dynamic3D:
         for pt in self.__reader.get_attach_pts():
             self.__attach_pts.append(pt - mass_center)
 
+    def get_interval(self):
+        return self.__step_interval
+
+    def set_interval(self, interval):
+        self.__step_interval = float(interval)
+
     def get_state(self):
         return self.__states
 
