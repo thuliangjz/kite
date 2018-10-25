@@ -4,6 +4,9 @@
 实现自定义读取方法
 """
 class Reader3DBase:
+    """
+    基类,子类在get_type中返回相应的类型
+    """
     TYPE_FORCE = 0
     TYPE_ACCELERATION = 1
     def __init__(self):
@@ -16,6 +19,8 @@ class Reader3DBase:
         self.__attach_pts__ = lst_pts
     def get_attach_pts(self):
         return self.__attach_pts__
+    def reset(self):
+        pass
 
 class Reader3DStableLength(Reader3DBase):
     def read(self, time):

@@ -38,7 +38,7 @@ class DynamicSolver:
         v_parallel = self.get_v_parallel()          #由于get_v_parallel可能具有副作用，所以在整个step的过程中只调用1次
         g = 9.8 #重力加速度常数
         clk_90 = np.array([[0, 1], [-1, 0]])    #逆时针旋转90度的常数矩阵
-        cntr_clk_90 = np.array([[0, -1], [1, 0]])        #顺时针旋转90度的常数矩阵
+        #cntr_clk_90 = np.array([[0, -1], [1, 0]])        #顺时针旋转90度的常数矩阵
         r_unit = self.__r / np.linalg.norm(self.__r)
         v_kite = r_unit * v_parallel + clk_90.dot(r_unit) * self.__v_vertical #根据两个分量计算v矢量
         v_rel = self.__v_wind - v_kite

@@ -49,7 +49,6 @@ class Dynamic3D:
         self.__panels = []
         self.__mass_pts = []
         self.__step_interval = step_interval
-        self.__states = {}
     def add_panel(self, pannel):
         """
         所有的key参见Dynamic3D.PANNEL_KEYS
@@ -98,7 +97,8 @@ class Dynamic3D:
 
         self.__vc = init_cond["v0"]
         self.__l = init_cond["L0"]
-        self.__transformation = init_cond["T0"]
+        #传入的时候按照矩阵形式传入,保存的时候,__transformation[i]就是原先第i列对应的向量
+        self.__transformation = init_cond["T0"].transpose()
         self.__v_wind = init_cond["v_wind"]
         self.__density = init_cond["density"]
         self.__timer = 0
@@ -125,8 +125,17 @@ class Dynamic3D:
     def set_interval(self, interval):
         self.__step_interval = float(interval)
 
+    def get_reader(self):
+        return self.__reader
+
     def get_state(self):
-        return self.__states
+        state = {}
+        state["v_angular"] = self.__l / self.__angular_mass()
+        state["rc"] = np.copy(self.__rc)
+        state["vc"] = np.copy(self.__vc)
+        state["l"] = np.copy(self.__l)
+        state["transformation"] = self.__transformation.transpose()
+        return state
 
     def get_rope_length(self):
         transformation = self.__transformation.transpose()
@@ -215,15 +224,6 @@ class Dynamic3D:
         self.__vc = self.__vc + a_centroid * self.__step_interval
 
         self.__timer += self.__step_interval
-
-        self.__states = {}
-        self.__states["v_angular"] = angular_velocity
-        self.__states["rc"] = self.__rc
-        self.__states["vc"] = self.__vc
-        self.__states["l"] = self.__l
-        self.__states["transformation"] = transformation
-        self.__states["pull_forces"] = pull_forces
-
 
 
     def __step_read_acceleration(self, accelerations, attach_pts):

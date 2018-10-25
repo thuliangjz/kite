@@ -5,11 +5,12 @@ import sys
 import os
 import math
 import re
+import pdb
+from collections import deque
 import numpy as np
 import pygame
 import OpenGL.GL as gl
 import OpenGL.GLU as glu
-
 
 import reader_3d
 import dynamic_3d
@@ -20,20 +21,104 @@ sys.path.append(os.path.abspath(
 import util
 #pylint: enable=wrong-import-position
 
-class CL3DConst(util.KiteFunction):
+class CL3DTest(util.KiteFunction):
+    def __init__(self, m_cl):
+        self.__max_cl = m_cl
     def compute(self, val):
-        return 0.5
+        #最大0.5,反向之后仍然向上,随着theta接近pi/2而减小
+        return (math.pi / 2 - val[1])  / math.pi * 2 * self.__max_cl
 
 class CD3DConst(util.KiteFunction):
+    def __init__(self, c):
+        self.__c = c
     def compute(self, val):
-        return 0.1
+        return self.__c
 
+class Reader3DDynamicLength(reader_3d.Reader3DBase):
+    """
+    根据输入控制读取加速度的读取器
+    内部保留了一个象征加速度的tuple的队列
+    tpl:(开始时间,结束时间,加速度大小)
+    """
+    def __init__(self, a_pull, ratio_pull_rel, time_pull):
+        super(Reader3DDynamicLength, self).__init__()
+        self.__acceleratoin_events = []
+        self.__time = 0
+        self.__a_pull = a_pull
+        self.__time_rel = ratio_pull_rel * time_pull
+        self.__time_pull = time_pull
+        self.__a_rel = -a_pull / ratio_pull_rel
+    def rope_pulled(self, idx_rope):
+        """
+        在相应绳子的队列中添加一个脉冲事件
+        """
+        t_1 = self.__time + self.__time_pull
+        t_2 = t_1 + self.__time_rel
+        t_3 = t_2 + self.__time_pull
+        events_new = [(self.__time, t_1, self.__a_pull),
+                      (t_1, t_2, self.__a_rel), (t_2, t_3, self.__a_pull)]
+        queue = list(self.__acceleratoin_events[idx_rope])
+        i = 0
+        for n_e in events_new:
+            while i < len(queue):
+                overlap = (max(n_e[0], queue[i][0]), min(n_e[1], queue[i][1]))
+                if overlap[0] < overlap[1]:
+                    queue.insert(i + 1, (overlap[0], overlap[1], n_e[2] + queue[i][2]))
+                    queue[i] = (queue[i][0], overlap[0], queue[i][2])
+                    n_e = (overlap[1], n_e[1], n_e[2])
+                    i += 1
+                if n_e[0] >= n_e[1]:
+                    break
+                i += 1
+            if n_e[0] < n_e[1]:
+                queue.append(tuple(n_e))
+                i += 1
+        self.__acceleratoin_events[idx_rope] = deque(queue)
+
+    def read(self, time):
+        self.__time = time
+        lst_result = []
+        for i in range(len(self.__acceleratoin_events)):
+            while self.__acceleratoin_events[i] and time >= self.__acceleratoin_events[i][0][1]:
+                self.__acceleratoin_events[i].popleft()
+            if self.__acceleratoin_events[i]:
+#                pdb.set_trace()
+                lst_result.append(-self.__acceleratoin_events[i][0][2])
+            else:
+                lst_result.append(0)
+        return lst_result
+
+    def get_type(self):
+        return self.TYPE_ACCELERATION
+    def set_attach_pts(self, lst_pts):
+        super(Reader3DDynamicLength, self).set_attach_pts(lst_pts)
+        self.__acceleratoin_events = [deque() for _ in self.__attach_pts__]
+    def reset(self):
+        for queue in self.__acceleratoin_events:
+            queue.clear()
+#上下侧翼参数
+LEN_SIDE_WING = 0.25
+THETA_SIDE_WING = math.pi / 4
+BASIS_UP = np.array([
+    (1, 0, 0),
+    (0, -math.cos(THETA_SIDE_WING), math.sin(THETA_SIDE_WING)),
+    ])
+BASIS_DOWN = np.array([
+    (1, 0, 0),
+    (0, math.cos(THETA_SIDE_WING), math.sin(THETA_SIDE_WING)),
+    ])
+REF_UP = np.array([0, 0.25, 0.25]) + 0.5 * LEN_SIDE_WING * BASIS_UP[1]
+REF_DOWN = np.array([0, REF_UP[1], -REF_UP[2]])
+C_D_LR = 0.2
+C_D_UD = 0.5
+C_L_LR = 0.6
+C_L_UD = 0
 #leading_edge始终是plane_basis的第一个
 SIMPLE_KITE = {
     "panels":[
         {
-            "c_l": CL3DConst(),
-            "c_d": CD3DConst(),
+            "c_l": CL3DTest(C_L_LR),
+            "c_d": CD3DConst(C_D_LR),
             "plane_basis": np.array([
                 (3 ** 0.5 / 2, 0.5, 0),
                 (0, 0, 1),
@@ -46,8 +131,8 @@ SIMPLE_KITE = {
             "color": (1, 0, 0)
         },
         {
-            "c_l": CL3DConst(),
-            "c_d": CD3DConst(),
+            "c_l": CL3DTest(C_L_UD),
+            "c_d": CD3DConst(C_D_UD),
             "plane_basis": np.array([
                 (1, 0, 0),
                 (0, 0, 1),
@@ -60,8 +145,8 @@ SIMPLE_KITE = {
             "color": (0, 1, 0)
         },
         {
-            "c_l": CL3DConst(),
-            "c_d": CD3DConst(),
+            "c_l": CL3DTest(C_L_LR),
+            "c_d": CD3DConst(C_D_LR),
             "plane_basis": np.array([
                 (3 ** 0.5 / 2, -0.5, 0),
                 (0, 0, 1),
@@ -72,6 +157,28 @@ SIMPLE_KITE = {
             "width": 0.5,
             "length": 0.5,
             "color": (0, 0, 1)
+        },
+        {
+            "c_l": CL3DTest(C_L_UD),
+            "c_d": CD3DConst(C_D_UD),
+            "plane_basis": BASIS_UP,
+            "leading_edge": (1, 0, 0),
+            "ref_pt": REF_UP,
+            "area": LEN_SIDE_WING,
+            "width": LEN_SIDE_WING,
+            "length": 1,
+            "color": (0, 1, 1)
+        },
+        {
+            "c_l": CL3DTest(C_L_UD),
+            "c_d": CD3DConst(C_D_UD),
+            "plane_basis": BASIS_DOWN,
+            "leading_edge": (1, 0, 0),
+            "ref_pt": REF_DOWN,
+            "area": LEN_SIDE_WING,
+            "width": LEN_SIDE_WING,
+            "length": 1,
+            "color": (0, 1, 1)
         },
     ],
     "mass_pts":[
@@ -209,28 +316,30 @@ def animation_input_function(event):
     ESC回到上一级
     """
     handler = GLOBAL_OBJECTS["ani_input_handler"]
+    solver = GLOBAL_OBJECTS["solver"]
+    if event.type == pygame.KEYDOWN and event.key in handler.key_rope_map:
+        solver.get_reader().rope_pulled(handler.key_rope_map.index(event.key))
     if handler.is_playing:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
             handler.is_playing = False
         else:
-            solver = GLOBAL_OBJECTS["solver"]
+            GLOBAL_OBJECTS["state_list"].append(solver.get_state())
             solver.step()
             state = solver.get_state()
             GLOBAL_OBJECTS["current_state"] = state
-            GLOBAL_OBJECTS["state_list"].append(state)
             interval = solver.get_interval()
             handler.time_played += interval
-            if handler.time_played > handler.max_play_time:
+            if handler.time_played > handler.max_play_time and handler.max_play_time > 0:
                 handler.is_playing = False
                 handler.time_played = 0
     elif event.type == pygame.KEYDOWN:
         if event.key == pygame.K_SPACE:
             handler.is_playing = True
         elif event.key == pygame.K_RIGHT:
-            GLOBAL_OBJECTS["solver"].step()
-            state = GLOBAL_OBJECTS["solver"].get_state()
+            GLOBAL_OBJECTS["state_list"].append(solver.get_state())
+            solver.step()
+            state = solver.get_state()
             GLOBAL_OBJECTS["current_state"] = state
-            GLOBAL_OBJECTS["state_list"].append(state)
         elif event.key == pygame.K_LEFT:
             #检查列表为空的一种手段
             if GLOBAL_OBJECTS["state_list"]:
@@ -246,9 +355,9 @@ def animation_input_function(event):
                 GLOBAL_OBJECTS["current_state"] = state
             else:
                 return ("animation", "已经位于初始状态")
-        elif event.key == pygame.K_u:
+        elif event.key == pygame.K_u and GLOBAL_OBJECTS["state_list"]:
             state = GLOBAL_OBJECTS["state_list"][0]
-            GLOBAL_OBJECTS["solver"].init({
+            solver.init({
                 "T0": state["transformation"],
                 "r0": state["rc"],
                 "v0": state["vc"],
@@ -256,8 +365,10 @@ def animation_input_function(event):
                 "v_wind": GLOBAL_OBJECTS["v_wind"],
                 "density": GLOBAL_OBJECTS["density"],
             })
+            solver.get_reader().reset()
             GLOBAL_OBJECTS["current_state"] = state
-            GLOBAL_OBJECTS["state_list"] = GLOBAL_OBJECTS["state_list"][:1]
+            GLOBAL_OBJECTS["state_list"].clear()
+
         elif event.key == pygame.K_ESCAPE:
             return ("control_unset", None)
     return ("animation", None)
@@ -324,12 +435,15 @@ def angle_input_converter(str_in):
     return math.pi * deg / 180
 
 def set_input_func(str_in):
+    """
+    设置变量的处理函数
+    """
     if str_in == "q":
         return ("control_unset", None)
     rules = [
         (r"d_angle[\s]*(.*)", "angle_delta", angle_input_converter),
         (r"d_pos[\s]*(.*)", "pos_delta", float),
-        (r"play_max[\s]*(.*)", "ani_input_handler", "max_play_time", int, "attr"),
+        (r"play_max[\s]*(.*)", "ani_input_handler", "max_play_time", float, "attr"),
         (r"step[\s]*(.*)", "solver", "set_interval", float, "function")
     ]
     for rule in rules:
@@ -350,15 +464,16 @@ def set_input_func(str_in):
 class AniInputHandler:
     def __init__(self):
         self.time_played = 0
-        self.max_play_time = 1
+        self.max_play_time = -1
         self.is_playing = False
+        self.key_rope_map = [pygame.K_1, pygame.K_2]
 
 GLOBAL_OBJECTS = {
     "init_state": {
         "rc": np.array([0, 5, 0]),
         "transformation": np.array([
-            [1, 0, 0],
-            [0, 1, 0],
+            [3 ** 0.5 / 2, 0.5, 0],
+            [-0.5, 3 ** 0.5 / 2, 0],
             [0, 0, 1]
         ]),
         "vc": np.array([0, 0, 0]),
@@ -373,11 +488,13 @@ GLOBAL_OBJECTS = {
     "angle_delta": math.pi / 36,
     "pos_delta": 1,
     "ani_input_handler": AniInputHandler()
+#pylint: disable = C0330
 #等待在main中进行初始化的键
 # "current_view_angle"
 # "current_view_pos"
 # "current_state"
 # "solver"
+#pylint: enable = C0330
 }
 
 
@@ -440,6 +557,7 @@ def main():
     pygame.display.set_mode(display, pygame.OPENGL | pygame.DOUBLEBUF)
 
     normalize_kite(SIMPLE_KITE)
+    gl.glEnable(gl.GL_DEPTH_TEST)
     for panel in SIMPLE_KITE["panels"]:
         set_quad_vert(panel)
     GLOBAL_OBJECTS["current_state"] = GLOBAL_OBJECTS["init_state"]
@@ -451,10 +569,11 @@ def main():
         "perspective": (45, display[0] / display[1], 0.1, 50)
     }
     #设置求解器
-    #reader = reader_3d.Reader3DConstF(2.5)
-    reader = reader_3d.Reader3DStableLength()
+    reader = reader_3d.Reader3DConstF(0)
+    #reader = reader_3d.Reader3DStableLength()
+    #reader = Reader3DDynamicLength(2, 10000, 1)
     reader.set_attach_pts(SIMPLE_KITE["attach_pts"])
-    GLOBAL_OBJECTS["solver"] = dynamic_3d.Dynamic3D(reader, 0.0001)
+    GLOBAL_OBJECTS["solver"] = dynamic_3d.Dynamic3D(reader, 0.005)
     for panel in SIMPLE_KITE["panels"]:
         GLOBAL_OBJECTS["solver"].add_panel(panel)
     for pt in SIMPLE_KITE["mass_pts"]:
