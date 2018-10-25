@@ -39,25 +39,38 @@ class Reader3DDynamicLength(reader_3d.Reader3DBase):
     根据输入控制读取加速度的读取器
     内部保留了一个象征加速度的tuple的队列
     tpl:(开始时间,结束时间,加速度大小)
+    每按一次对应添加一个类型的加速度事件
     """
-    def __init__(self, a_pull, ratio_pull_rel, time_pull):
-        super(Reader3DDynamicLength, self).__init__()
+    def __init__(self, a_pull, time_pull, ratio_pull_rel):
         self.__acceleratoin_events = []
+        self.__a_pull = float(a_pull)
+        self.__time_pull = float(time_pull)
+        self.__a_rel = -a_pull / float(ratio_pull_rel)
+        self.__time_rel = float(time_pull) * ratio_pull_rel
+        #元组含义:起始时间到当前时间距离,长度,加速度
+        self.__events = {
+            "pull": [(0, time_pull / 2, a_pull), (time_pull / 2, time_pull / 2, -a_pull)],
+            "rel": [(0, self.__time_rel / 2, self.__a_rel), \
+                (self.__time_rel / 2, self.__time_rel / 2, -self.__a_rel)]
+        }
         self.__time = 0
-        self.__a_pull = a_pull
-        self.__time_rel = ratio_pull_rel * time_pull
-        self.__time_pull = time_pull
-        self.__a_rel = -a_pull / ratio_pull_rel
-    def rope_pulled(self, idx_rope):
+        self.dic_key_event = {
+            pygame.K_1: (0, "pull"),
+            pygame.K_2: (0, "rel"),
+            pygame.K_3: (1, "pull"),
+            pygame.K_4: (1, "rel")
+        }
+        super(Reader3DDynamicLength, self).__init__()
+    def get_key_event_map(self):
+        return self.dic_key_event
+    def new_a_event(self, tp_event):
         """
-        在相应绳子的队列中添加一个脉冲事件
+        有按键按下时加入加速度事件
         """
-        t_1 = self.__time + self.__time_pull
-        t_2 = t_1 + self.__time_rel
-        t_3 = t_2 + self.__time_pull
-        events_new = [(self.__time, t_1, self.__a_pull),
-                      (t_1, t_2, self.__a_rel), (t_2, t_3, self.__a_pull)]
-        queue = list(self.__acceleratoin_events[idx_rope])
+        idx, key = tp_event
+        events_new = [(self.__time + tp[0], self.__time + tp[0] + tp[1], tp[2])
+                      for tp in self.__events[key]]
+        queue = list(self.__acceleratoin_events[idx])
         i = 0
         for n_e in events_new:
             while i < len(queue):
@@ -73,7 +86,8 @@ class Reader3DDynamicLength(reader_3d.Reader3DBase):
             if n_e[0] < n_e[1]:
                 queue.append(tuple(n_e))
                 i += 1
-        self.__acceleratoin_events[idx_rope] = deque(queue)
+        self.__acceleratoin_events[idx] = deque(queue)
+
 
     def read(self, time):
         self.__time = time
@@ -81,12 +95,13 @@ class Reader3DDynamicLength(reader_3d.Reader3DBase):
         for i in range(len(self.__acceleratoin_events)):
             while self.__acceleratoin_events[i] and time >= self.__acceleratoin_events[i][0][1]:
                 self.__acceleratoin_events[i].popleft()
-            if self.__acceleratoin_events[i]:
-#                pdb.set_trace()
+            if self.__acceleratoin_events[i] and time >= self.__acceleratoin_events[i][0][0]:
+                #位于起始时间之后才读取该事件的加速度
                 lst_result.append(-self.__acceleratoin_events[i][0][2])
             else:
                 lst_result.append(0)
         return lst_result
+
 
     def get_type(self):
         return self.TYPE_ACCELERATION
@@ -96,6 +111,8 @@ class Reader3DDynamicLength(reader_3d.Reader3DBase):
     def reset(self):
         for queue in self.__acceleratoin_events:
             queue.clear()
+        self.__time = 0
+
 #上下侧翼参数
 LEN_SIDE_WING = 0.25
 THETA_SIDE_WING = math.pi / 4
@@ -109,10 +126,10 @@ BASIS_DOWN = np.array([
     ])
 REF_UP = np.array([0, 0.25, 0.25]) + 0.5 * LEN_SIDE_WING * BASIS_UP[1]
 REF_DOWN = np.array([0, REF_UP[1], -REF_UP[2]])
-C_D_LR = 0.2
+C_D_LR = 0.3
 C_D_UD = 0.5
-C_L_LR = 0.6
-C_L_UD = 0
+C_L_LR = 0.7
+C_L_UD = 0.5
 #leading_edge始终是plane_basis的第一个
 SIMPLE_KITE = {
     "panels":[
@@ -317,8 +334,9 @@ def animation_input_function(event):
     """
     handler = GLOBAL_OBJECTS["ani_input_handler"]
     solver = GLOBAL_OBJECTS["solver"]
-    if event.type == pygame.KEYDOWN and event.key in handler.key_rope_map:
-        solver.get_reader().rope_pulled(handler.key_rope_map.index(event.key))
+    reader = solver.get_reader()
+    if event.type == pygame.KEYDOWN and event.key in reader.get_key_event_map():
+        reader.new_a_event(reader.get_key_event_map()[event.key])
     if handler.is_playing:
         if event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE:
             handler.is_playing = False
@@ -365,7 +383,7 @@ def animation_input_function(event):
                 "v_wind": GLOBAL_OBJECTS["v_wind"],
                 "density": GLOBAL_OBJECTS["density"],
             })
-            solver.get_reader().reset()
+            reader.reset()
             GLOBAL_OBJECTS["current_state"] = state
             GLOBAL_OBJECTS["state_list"].clear()
 
@@ -472,8 +490,8 @@ GLOBAL_OBJECTS = {
     "init_state": {
         "rc": np.array([0, 5, 0]),
         "transformation": np.array([
-            [3 ** 0.5 / 2, 0.5, 0],
-            [-0.5, 3 ** 0.5 / 2, 0],
+            [1, 0, 0],
+            [0, 1, 0],
             [0, 0, 1]
         ]),
         "vc": np.array([0, 0, 0]),
@@ -552,6 +570,7 @@ def main():
     """
     当前为测试入口
     """
+    pdb.set_trace()
     display = (800, 600)
     pygame.init()
     pygame.display.set_mode(display, pygame.OPENGL | pygame.DOUBLEBUF)
@@ -569,9 +588,9 @@ def main():
         "perspective": (45, display[0] / display[1], 0.1, 50)
     }
     #设置求解器
-    reader = reader_3d.Reader3DConstF(0)
+    #reader = reader_3d.Reader3DConstF(0)
     #reader = reader_3d.Reader3DStableLength()
-    #reader = Reader3DDynamicLength(2, 10000, 1)
+    reader = Reader3DDynamicLength(2, 0.2, 1)
     reader.set_attach_pts(SIMPLE_KITE["attach_pts"])
     GLOBAL_OBJECTS["solver"] = dynamic_3d.Dynamic3D(reader, 0.005)
     for panel in SIMPLE_KITE["panels"]:
